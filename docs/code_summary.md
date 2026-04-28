@@ -102,5 +102,4 @@ Because the file is opened in `"a+"` mode, both `viewContents()` and `writeToFil
 
 This is why Open File "matters" — without an open file, View and Write cannot run.
 
-## Summary
-Overall, the code is organized around small functions, where each function handles one file operation. The program combines real Linux file handling with a simple menu interface, making it easy to test and explain.
+
