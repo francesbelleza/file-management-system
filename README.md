@@ -76,3 +76,7 @@ This project is a simple terminal-based file management system written in C for 
 - file must be closed to rename it
 - all file operations are restricted to the `files/` folder for safety.
 - file names cannot contain spaces if the program uses
+
+## System Screenshot
+
+![System overview](system_screenshot/system-overview.png)
