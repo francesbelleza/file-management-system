@@ -41,12 +41,14 @@ Steps:
 - creates the file using `fopen(..., "w")`
 
 ### `openFile()`
-Opens a real file for reading using `fopen(..., "r")`.
+Opens a real file for both reading and writing using `fopen(..., "a+")`.
+The `"a+"` mode allows the program to read the file's contents and also append new text to it through the same file handle.
+
 The program stores:
 - the open file pointer in `openedFile`
 - the file name in `openedName`
 
-This allows the program to keep track of one currently open file.
+This allows the program to keep track of one currently open file. Only one file can be open at a time. If another file is already open, the program asks the user to close it first.
 
 ### `closeFile()`
 Closes the currently open file using `fclose()`. After closing it, the program clears the saved file pointer and name.
@@ -68,20 +70,37 @@ Renames a file using `rename()`. It checks that:
 - the file is not currently open
 
 ### `viewContents()`
-Opens a file in read mode, reads it character by character using `fgetc()`, and prints the contents to the terminal.
+Displays the contents of the **currently open file**. If no file is open, the program prints an error message asking the user to open one first.
+
+Steps:
+- checks that a file is open
+- calls `rewind()` to move the read position back to the start of the file
+- reads it character by character using `fgetc()` and prints each character to the terminal
 
 ### `writeToFile()`
-Opens a file in append mode using `fopen(..., "a")`, reads text from the user with `fgets()`, and appends that text to the file.
+Appends a line of text to the **currently open file**. If no file is open, the program prints an error message asking the user to open one first.
+
+Steps:
+- checks that a file is open
+- reads a line of text from the user with `fgets()`
+- writes the text using `fputs()` (the `"a+"` mode guarantees writes go to the end of the file)
+- calls `fflush()` so the new text reaches disk immediately
 
 ### `showMenu()`
 Prints the list of menu options for the user.
 
 ## Open File Tracking
 The program uses two global variables:
-- `FILE *openedFile`
-- `char openedName[]`
+- `FILE *openedFile` — the file handle returned by `fopen()`
+- `char openedName[]` — the name of the currently open file
 
 These keep track of which file is currently open. The design only allows one file to be open at a time, which keeps the program simple.
+
+Because the file is opened in `"a+"` mode, both `viewContents()` and `writeToFile()` operate on the same shared file handle:
+- View uses `rewind()` and reads from the start
+- Write uses `fputs()`, which always appends at the end
+
+This is why Open File "matters" — without an open file, View and Write cannot run.
 
 ## Summary
 Overall, the code is organized around small functions, where each function handles one file operation. The program combines real Linux file handling with a simple menu interface, making it easy to test and explain.

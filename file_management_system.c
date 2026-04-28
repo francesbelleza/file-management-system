@@ -99,13 +99,13 @@ void openFile() {
     }
 
     buildPath(path, name);
-    openedFile = fopen(path, "r");
+    openedFile = fopen(path, "a+");   // "a+" = read + append
     if (openedFile == NULL) {
         printf("Error: could not open '%s'.\n", name);
         return;
     }
     strcpy(openedName, name);
-    printf("File '%s' is now open.\n", name);
+    printf("File '%s' is now open (you can now view or write to it).\n", name);
 }
 
 // 3. Close the currently open file
@@ -238,30 +238,20 @@ void renameFile() {
     }
 }
 
-// 8. View a file's contents
+// 8. View the contents of the currently open file
 void viewContents() {
-    char name[NAME_LEN];
-    char path[PATH_LEN];
-
-    printf("Enter file name to view: ");
-    scanf("%99s", name);
-
-    if (!isValidName(name) || !fileExists(name)) {
-        printf("File '%s' does not exist.\n", name);
+    if (openedFile == NULL) {
+        printf("No file is open. Please open a file first (option 2).\n");
         return;
     }
 
-    buildPath(path, name);
-    FILE *fp = fopen(path, "r");
-    if (fp == NULL) {
-        printf("Error: could not open '%s' for reading.\n", name);
-        return;
-    }
+    // Move read position back to the start of the file
+    rewind(openedFile);
 
-    printf("\n--- Contents of %s ---\n", name);
+    printf("\n--- Contents of %s ---\n", openedName);
     int ch;
     int empty = 1;
-    while ((ch = fgetc(fp)) != EOF) {
+    while ((ch = fgetc(openedFile)) != EOF) {
         putchar(ch);
         empty = 0;
     }
@@ -270,24 +260,18 @@ void viewContents() {
     } else {
         printf("\n--- end of file ---\n");
     }
-    fclose(fp);
 }
 
-// 9. Append a line of text to a file
+// 9. Append a line of text to the currently open file
 void writeToFile() {
-    char name[NAME_LEN];
-    char path[PATH_LEN];
     char text[TEXT_LEN];
 
-    printf("Enter file name to write to: ");
-    scanf("%99s", name);
-
-    if (!isValidName(name) || !fileExists(name)) {
-        printf("File '%s' does not exist.\n", name);
+    if (openedFile == NULL) {
+        printf("No file is open. Please open a file first (option 2).\n");
         return;
     }
 
-    // Eat the leftover newline from scanf so fgets reads a real line
+    // Eat the leftover newline from the menu's scanf so fgets reads cleanly
     while (getchar() != '\n');
 
     printf("Enter text to append: ");
@@ -295,15 +279,9 @@ void writeToFile() {
         return;
     }
 
-    buildPath(path, name);
-    FILE *fp = fopen(path, "a");   // "a" = append
-    if (fp == NULL) {
-        printf("Error: could not open '%s' for writing.\n", name);
-        return;
-    }
-    fputs(text, fp);
-    fclose(fp);
-    printf("Text appended to '%s'.\n", name);
+    fputs(text, openedFile);
+    fflush(openedFile);   // make sure the write reaches disk right away
+    printf("Text appended to '%s'.\n", openedName);
 }
 
 void showMenu() {
