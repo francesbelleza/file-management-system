@@ -1,0 +1,8 @@
+# User-created files (recreated by the program at runtime)
+files/
+
+# Compiled binary
+fms
+
+# macOS metadata
+.DS_Store
