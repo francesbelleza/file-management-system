@@ -1,53 +1,68 @@
 /*
- * File Management System (real-file version)
+ * File Management System (array-based version)
  *
- * This program manages real files inside a "files/" folder next to the
- * program. The user can create, open, close, search, list, delete,
- * rename, view, and write to files using a terminal menu.
+ * This program simulates a small file system entirely in memory using a
+ * fixed-size array of File records. It does NOT touch the host operating
+ * system's filesystem -- no real files are created, read, or deleted on
+ * disk. All "files" live in the fileSystem[] array for the duration of
+ * the program and disappear when the program exits.
  *
- * For safety, all operations are restricted to the "files/" folder.
+ * The user can create, open, close, search, list, delete, rename, view,
+ * and write to these in-memory files through a terminal menu.
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <dirent.h>      // opendir, readdir
-#include <sys/stat.h>    // mkdir
-#include <unistd.h>      // access
 
-#define NAME_LEN 100
-#define PATH_LEN 200
-#define TEXT_LEN 500
-#define FOLDER "files"
+#define MAX_FILES   50
+#define NAME_LEN    100
+#define CONTENT_LEN 1000
+#define TEXT_LEN    500
 
-// Track the currently open file (only one at a time)
-FILE *openedFile = NULL;
-char openedName[NAME_LEN] = "";
+// One record in the simulated file system.
+typedef struct {
+    char name[NAME_LEN];
+    char content[CONTENT_LEN];
+    int isOpen;   // 1 if this file is currently open, 0 otherwise
+    int inUse;    // 1 if this slot holds a file, 0 if the slot is free
+} File;
 
-// Make sure the file name is safe (no slashes, no "..", not empty)
+// The simulated file system: a fixed array of file records.
+File fileSystem[MAX_FILES];
+
+// Index of the currently open file, or -1 if no file is open.
+// Only one file may be open at a time.
+int openedIndex = -1;
+
+// Reject empty names. Slashes/".." don't matter for an in-memory store,
+// but we still disallow empty names so the user can't create a blank entry.
 int isValidName(char *name) {
     if (strlen(name) == 0) return 0;
-    if (strchr(name, '/') != NULL) return 0;
-    if (strstr(name, "..") != NULL) return 0;
     return 1;
 }
 
-// Build "files/<name>" into path
-void buildPath(char *path, char *name) {
-    snprintf(path, PATH_LEN, "%s/%s", FOLDER, name);
+// Search the array for a file with this name. Returns its index, or -1.
+int findFile(char *name) {
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (fileSystem[i].inUse && strcmp(fileSystem[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
 
-// Return 1 if the file exists in the files/ folder, else 0
-int fileExists(char *name) {
-    char path[PATH_LEN];
-    buildPath(path, name);
-    return access(path, F_OK) == 0;
+// Find the first free slot in the array. Returns its index, or -1 if full.
+int findFreeSlot() {
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (!fileSystem[i].inUse) return i;
+    }
+    return -1;
 }
 
 // 1. Create a new empty file
 void createFile() {
     char name[NAME_LEN];
-    char path[PATH_LEN];
 
     printf("Enter file name: ");
     scanf("%99s", name);
@@ -56,25 +71,27 @@ void createFile() {
         printf("Invalid file name.\n");
         return;
     }
-    if (fileExists(name)) {
+    if (findFile(name) != -1) {
         printf("File '%s' already exists.\n", name);
         return;
     }
 
-    buildPath(path, name);
-    FILE *fp = fopen(path, "w");   // "w" creates a new empty file
-    if (fp == NULL) {
-        printf("Error: could not create '%s'.\n", name);
+    int slot = findFreeSlot();
+    if (slot == -1) {
+        printf("Error: file system is full (max %d files).\n", MAX_FILES);
         return;
     }
-    fclose(fp);
-    printf("File '%s' created in %s/.\n", name, FOLDER);
+
+    strcpy(fileSystem[slot].name, name);
+    fileSystem[slot].content[0] = '\0';
+    fileSystem[slot].isOpen = 0;
+    fileSystem[slot].inUse = 1;
+    printf("File '%s' created.\n", name);
 }
 
-// 2. Open a file (track it so we can close it later)
+// 2. Open a file (track it so we can view/write to it later)
 void openFile() {
     char name[NAME_LEN];
-    char path[PATH_LEN];
 
     printf("Enter file name to open: ");
     scanf("%99s", name);
@@ -83,41 +100,37 @@ void openFile() {
         printf("Invalid file name.\n");
         return;
     }
-    if (!fileExists(name)) {
+    int idx = findFile(name);
+    if (idx == -1) {
         printf("File '%s' does not exist.\n", name);
         return;
     }
 
     // Don't allow opening when something is already open
-    if (openedFile != NULL) {
-        if (strcmp(openedName, name) == 0) {
+    if (openedIndex != -1) {
+        if (openedIndex == idx) {
             printf("File '%s' is already open.\n", name);
         } else {
-            printf("File '%s' is already open. Close it first.\n", openedName);
+            printf("File '%s' is already open. Close it first.\n",
+                   fileSystem[openedIndex].name);
         }
         return;
     }
 
-    buildPath(path, name);
-    openedFile = fopen(path, "a+");   // "a+" = read + append
-    if (openedFile == NULL) {
-        printf("Error: could not open '%s'.\n", name);
-        return;
-    }
-    strcpy(openedName, name);
+    fileSystem[idx].isOpen = 1;
+    openedIndex = idx;
     printf("File '%s' is now open (you can now view or write to it).\n", name);
 }
 
 // 3. Close the currently open file
 void closeFile() {
-    if (openedFile == NULL) {
+    if (openedIndex == -1) {
         printf("No file is currently open.\n");
         return;
     }
-    fclose(openedFile);
-    printf("File '%s' is now closed.\n", openedName);
-    openedFile = NULL;
-    openedName[0] = '\0';
+    fileSystem[openedIndex].isOpen = 0;
+    printf("File '%s' is now closed.\n", fileSystem[openedIndex].name);
+    openedIndex = -1;
 }
 
 // 4. Search for a file by name and report status
@@ -131,50 +144,34 @@ void searchFile() {
         return;
     }
 
-    if (fileExists(name)) {
-        char *status = "closed";
-        if (openedFile != NULL && strcmp(openedName, name) == 0) {
-            status = "open";
-        }
+    int idx = findFile(name);
+    if (idx != -1) {
+        char *status = fileSystem[idx].isOpen ? "open" : "closed";
         printf("File '%s' exists. Status: %s\n", name, status);
     } else {
         printf("File '%s' does not exist.\n", name);
     }
 }
 
-// 5. Display every file in the files/ folder
+// 5. Display every file currently stored in the array
 void displayAll() {
-    DIR *dir = opendir(FOLDER);
-    if (dir == NULL) {
-        printf("Error: could not read '%s/'.\n", FOLDER);
-        return;
-    }
-
-    struct dirent *entry;
     int count = 0;
 
-    printf("\n--- Files in '%s/' ---\n", FOLDER);
-    while ((entry = readdir(dir)) != NULL) {
-        // skip "." and ".." and hidden files
-        if (entry->d_name[0] == '.') continue;
-
-        char *status = "closed";
-        if (openedFile != NULL && strcmp(openedName, entry->d_name) == 0) {
-            status = "open";
-        }
-        printf("- %s (%s)\n", entry->d_name, status);
+    printf("\n--- Files in the system ---\n");
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (!fileSystem[i].inUse) continue;
+        char *status = fileSystem[i].isOpen ? "open" : "closed";
+        printf("- %s (%s)\n", fileSystem[i].name, status);
         count++;
     }
     if (count == 0) {
         printf("(no files)\n");
     }
-    closedir(dir);
 }
 
-// 6. Delete a file from the folder
+// 6. Delete a file from the array
 void deleteFile() {
     char name[NAME_LEN];
-    char path[PATH_LEN];
 
     printf("Enter file name to delete: ");
     scanf("%99s", name);
@@ -183,36 +180,36 @@ void deleteFile() {
         printf("Invalid file name.\n");
         return;
     }
-    if (!fileExists(name)) {
+    int idx = findFile(name);
+    if (idx == -1) {
         printf("File '%s' does not exist.\n", name);
         return;
     }
-    if (openedFile != NULL && strcmp(openedName, name) == 0) {
+    if (fileSystem[idx].isOpen) {
         printf("File '%s' is open. Please close it first.\n", name);
         return;
     }
 
-    buildPath(path, name);
-    if (remove(path) == 0) {
-        printf("File '%s' deleted.\n", name);
-    } else {
-        printf("Error: could not delete '%s'.\n", name);
-    }
+    // Free the slot. The next createFile() can reuse it.
+    fileSystem[idx].inUse = 0;
+    fileSystem[idx].name[0] = '\0';
+    fileSystem[idx].content[0] = '\0';
+    printf("File '%s' deleted.\n", name);
 }
 
 // 7. Rename an existing file
 void renameFile() {
     char oldName[NAME_LEN], newName[NAME_LEN];
-    char oldPath[PATH_LEN], newPath[PATH_LEN];
 
     printf("Enter file name to rename: ");
     scanf("%99s", oldName);
 
-    if (!isValidName(oldName) || !fileExists(oldName)) {
+    int idx = findFile(oldName);
+    if (!isValidName(oldName) || idx == -1) {
         printf("File '%s' does not exist.\n", oldName);
         return;
     }
-    if (openedFile != NULL && strcmp(openedName, oldName) == 0) {
+    if (fileSystem[idx].isOpen) {
         printf("File '%s' is open. Please close it first.\n", oldName);
         return;
     }
@@ -224,40 +221,28 @@ void renameFile() {
         printf("Invalid new name.\n");
         return;
     }
-    if (fileExists(newName)) {
+    if (findFile(newName) != -1) {
         printf("A file named '%s' already exists.\n", newName);
         return;
     }
 
-    buildPath(oldPath, oldName);
-    buildPath(newPath, newName);
-    if (rename(oldPath, newPath) == 0) {
-        printf("File renamed to '%s'.\n", newName);
-    } else {
-        printf("Error: could not rename file.\n");
-    }
+    strcpy(fileSystem[idx].name, newName);
+    printf("File renamed to '%s'.\n", newName);
 }
 
 // 8. View the contents of the currently open file
 void viewContents() {
-    if (openedFile == NULL) {
+    if (openedIndex == -1) {
         printf("No file is open. Please open a file first (option 2).\n");
         return;
     }
 
-    // Move read position back to the start of the file
-    rewind(openedFile);
-
-    printf("\n--- Contents of %s ---\n", openedName);
-    int ch;
-    int empty = 1;
-    while ((ch = fgetc(openedFile)) != EOF) {
-        putchar(ch);
-        empty = 0;
-    }
-    if (empty) {
+    File *f = &fileSystem[openedIndex];
+    printf("\n--- Contents of %s ---\n", f->name);
+    if (f->content[0] == '\0') {
         printf("(file is empty)\n");
     } else {
+        printf("%s", f->content);
         printf("\n--- end of file ---\n");
     }
 }
@@ -266,7 +251,7 @@ void viewContents() {
 void writeToFile() {
     char text[TEXT_LEN];
 
-    if (openedFile == NULL) {
+    if (openedIndex == -1) {
         printf("No file is open. Please open a file first (option 2).\n");
         return;
     }
@@ -279,9 +264,15 @@ void writeToFile() {
         return;
     }
 
-    fputs(text, openedFile);
-    fflush(openedFile);   // make sure the write reaches disk right away
-    printf("Text appended to '%s'.\n", openedName);
+    File *f = &fileSystem[openedIndex];
+    // Make sure there is room left in the content buffer before appending.
+    if (strlen(f->content) + strlen(text) >= CONTENT_LEN) {
+        printf("Error: file '%s' is full (max %d characters).\n",
+               f->name, CONTENT_LEN - 1);
+        return;
+    }
+    strcat(f->content, text);
+    printf("Text appended to '%s'.\n", f->name);
 }
 
 void showMenu() {
@@ -302,9 +293,9 @@ void showMenu() {
 int main() {
     int choice;
 
-    // Make sure the files/ folder exists. If it already exists,
-    // mkdir returns an error which we just ignore.
-    mkdir(FOLDER, 0755);
+    // The fileSystem[] array is statically allocated, so every slot
+    // already starts with inUse = 0 (zero-initialized globals in C).
+    // No setup needed -- the simulated file system begins empty.
 
     while (1) {
         showMenu();
@@ -327,9 +318,6 @@ int main() {
             case 8:  viewContents();  break;
             case 9:  writeToFile();   break;
             case 10:
-                if (openedFile != NULL) {
-                    fclose(openedFile);  // tidy up before exiting
-                }
                 printf("Goodbye!\n");
                 return 0;
             default:
